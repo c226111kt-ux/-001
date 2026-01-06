@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>図形総合サイト（6種統合・安定版）</title>
+<style>
+  html,body{
+    margin:0; overflow:hidden;
+    background:#161a24; color:#fff;
+    font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+  }
+  #renderCanvas{ position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+  #panel{
+    position:fixed; top:20px; left:20px; z-index:10;
+    background:rgba(0,0,0,0.75);
+    padding:14px 14px 12px;
+    border-radius:12px;
+    width:320px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    user-select:none;
+  }
+  #panel h3{ margin:0 0 8px; font-size:18px; }
+  .row{ margin:10px 0; }
+  .small{ font-size:12px; opacity:.9; }
+  select{
+    width:100%; padding:8px 10px;
+    border-radius:10px; border:1px solid rgba(255,255,255,.18);
+    background:rgba(20,24,35,.9); color:#fff;
+    outline:none;
+  }
+  .dimLine{ margin:8px 0; }
+  .dimLine label{ display:block; font-size:13px; opacity:.95; margin-bottom:4px; }
+  .dimLine .ctrl{
+    display:flex; gap:8px; align-items:center;
+  }
+  input[type=number]{
+    width:72px; padding:6px 8px;
+    border-radius:10px; border:1px solid rgba(255,255,255,.18);
+    background:rgba(20,24,35,.9); color:#fff;
+    outline:none;
+  }
+  input[type=range]{ flex:1; }
+  #colorSet .colorLine{
+    display:flex; align-items:center; gap:8px;
+    margin:6px 0;
+  }
+  input[type=color]{
+    width:40px; height:28px;
+    padding:0; border:none; background:transparent;
+  }
+  .btn{
+    width:100%;
+    padding:10px;
+    margin-top:8px;
+    border:none;
+    border-radius:10px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  #toggleBtn{ background:#ffd400; color:#000; }
+  #resetBtn{ background:#2a3043; color:#fff; }
+  .sep{ height:1px; background:rgba(255,255,255,.12); margin:10px 0; }
+
+ #resetBtn{
+  position:fixed;
+  right:20px;
+  bottom:20px;
+  z-index:20;
+  width:140px;
+}
+
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h3 id="shapeTitle">図形</h3>
+
+  <div class="row">
+    <div class="small">図形を選択</div>
+    <select id="shapeSelect"></select>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="row">
+    <div class="small">寸法(cm)</div>
+    <div id="labels"></div>
+  </div>
+
+  <div class="row">
+    <div class="small">色</div>
+    <div id="colorSet"></div>
+  </div>
+
+  <button class="btn" id="toggleBtn">展開図に切替</button>
+  
+
+  <div class="row small" style="margin-top:10px;">
+    ※ マウスドラッグ：回転 / ホイール：ズーム
+  </div>
+</div>
+
+<button class="btn" id="resetBtn">リセット</button>
+
+<canvas id="renderCanvas"></canvas>
+
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script>
+/* =========================================================
+   共通：Babylon 基本セット（1セット固定）
+   ========================================================= */
+const canvas = document.getElementById("renderCanvas");
+const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer:true, stencil:true });
+const scene  = new BABYLON.Scene(engine);
+scene.clearColor = new BABYLON.Color3(0.09, 0.10, 0.14);
+
+const camera = new BABYLON.ArcRotateCamera(
+  "cam",
+  Math.PI * 0.35,
+  Math.PI * 0.35,
+  14,
+  BABYLON.Vector3.Zero(),
+  scene
+);
+camera.attachControl(canvas, true);
+camera.wheelPrecision = 30;
+camera.lowerRadiusLimit = 2;
+camera.upperRadiusLimit = 200;
+
+new BABYLON.HemisphericLight("light", new BABYLON.Vector3(1,1,0), scene);
+
+/* =========================================================
+   共通ユーティリティ
+   ========================================================= */
+function makeMat(hex){
+  const m = new BABYLON.StandardMaterial("", scene);
+  m.emissiveColor = BABYLON.Color3.FromHexString(hex);
+  m.disableLighting = true;
+  m.backFaceCulling = false;
+  return m;
+}
+
+function clearNode(node){
+  node.getChildMeshes().forEach(mesh => mesh.dispose());
+}
+
+function triFace(p1,p2,p3,mat,parent){
+  const mesh = new BABYLON.Mesh("", scene);
+  const pos = [p1.x,p1.y,p1.z, p2.x,p2.y,p2.z, p3.x,p3.y,p3.z];
+  const idx = [0,1,2];
+  const vd = new BABYLON.VertexData();
+  vd.positions = pos;
+  vd.indices   = idx;
+  vd.normals   = [];
+  BABYLON.VertexData.ComputeNormals(pos, idx, vd.normals);
+  vd.applyToMesh(mesh);
+  mesh.material = mat;
+  mesh.parent   = parent;
+  return mesh;
+}
+
+function quadFace(p1,p2,p3,p4,mat,parent){
+  const mesh = new BABYLON.Mesh("", scene);
+  const pos = [
+    p1.x,p1.y,p1.z,
+    p2.x,p2.y,p2.z,
+    p3.x,p3.y,p3.z,
+    p4.x,p4.y,p4.z
+  ];
+  const idx = [0,1,2, 0,2,3];
+  const vd = new BABYLON.VertexData();
+  vd.positions = pos;
+  vd.indices   = idx;
+  vd.normals   = [];
+  BABYLON.VertexData.ComputeNormals(pos, idx, vd.normals);
+  vd.applyToMesh(mesh);
+  mesh.material = mat;
+  mesh.parent   = parent;
+  return mesh;
+}
+
+function plane(w,h,mat,parent){
+  const p = BABYLON.MeshBuilder.CreatePlane("",
+    { width:w, height:h, sideOrientation:BABYLON.Mesh.DOUBLESIDE },
+    scene
+  );
+  p.material = mat;
+  if(parent) p.parent = parent;
+  return p;
+}
+
+function frame(node){
+  const meshes = node.getChildMeshes();
+  if(!meshes.length) return;
+
+  let min = meshes[0].getBoundingInfo().boundingBox.minimumWorld.clone();
+  let max = meshes[0].getBoundingInfo().boundingBox.maximumWorld.clone();
+
+  for(let i=1;i<meshes.length;i++){
+    const b = meshes[i].getBoundingInfo().boundingBox;
+    min = BABYLON.Vector3.Minimize(min, b.minimumWorld);
+    max = BABYLON.Vector3.Maximize(max, b.maximumWorld);
+  }
+  const center = min.add(max).scale(0.5);
+  const radius = max.subtract(min).length() * 0.5;
+
+  camera.setTarget(center);
+  camera.radius = Math.max(6, radius * 3.0);
+}
+
+/* =========================================================
+   図形：定義（6種）
+   - state: { isNet, dims, colors }
+   - uiDims: 寸法UIの定義
+   - colorNames: 色名
+   - buildSolid/buildNet: root配下にメッシュ生成
+   - onAfterBuild: 任意（カメラ角度など）
+   ========================================================= */
+const SHAPES = {
+  triPrism: {
+    name: "三角柱",
+    state: {
+      isNet:false,
+      dims: { base:2, height:2, triH:2 }, // 底辺, 柱の長さ, 三角形の高さ(奥行)
+      colors: ["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc"] // 前,後,底,左,右
+    },
+    uiDims: [
+      { label:"底辺", key:"base",  min:1, max:10, step:0.1 },
+      { label:"高さ", key:"height",min:1, max:10, step:0.1 },
+      { label:"奥行", key:"triH",  min:1, max:10, step:0.1 },
+    ],
+    colorNames: ["前面","後面","底面","左側面","右側面"],
+
+    buildSolid(root, dims, mats){
+      const hb = dims.base / 2;
+      const hh = dims.height / 2;
+      const h  = dims.triH / 2;
+
+      const A1 = new BABYLON.Vector3(0,  h,  hh);
+      const B1 = new BABYLON.Vector3(-hb,-h, hh);
+      const C1 = new BABYLON.Vector3( hb,-h, hh);
+
+      const A2 = new BABYLON.Vector3(0,  h, -hh);
+      const B2 = new BABYLON.Vector3(-hb,-h,-hh);
+      const C2 = new BABYLON.Vector3( hb,-h,-hh);
+
+      triFace(A1,B1,C1,mats[0],root);
+      triFace(A2,C2,B2,mats[1],root);
+
+      quadFace(B1,B2,C2,C1,mats[2],root);
+      quadFace(A1,A2,B2,B1,mats[3],root);
+      quadFace(A1,C1,C2,A2,mats[4],root);
+
+      // あなたの元コードの見え方に合わせる（筒状）
+      root.rotation.x = -Math.PI/2;
+    },
+
+    buildNet(root, dims, mats){
+      const hb = dims.base / 2;
+      const hh = dims.height / 2;
+      const sideLen = Math.sqrt(dims.triH*dims.triH + hb*hb);
+
+      const R1 = new BABYLON.Vector3(-hb,-hh,0);
+      const R2 = new BABYLON.Vector3( hb,-hh,0);
+      const R3 = new BABYLON.Vector3( hb, hh,0);
+      const R4 = new BABYLON.Vector3(-hb, hh,0);
+
+      quadFace(R1,R2,R3,R4,mats[2],root);
+
+      triFace(R4,R3,new BABYLON.Vector3(0, hh+dims.triH,0),mats[0],root);
+      triFace(R2,R1,new BABYLON.Vector3(0,-hh-dims.triH,0),mats[1],root);
+
+      quadFace(
+        R1,R4,
+        new BABYLON.Vector3(R4.x-sideLen,R4.y,0),
+        new BABYLON.Vector3(R1.x-sideLen,R1.y,0),
+        mats[3],root
+      );
+      quadFace(
+        R2,R3,
+        new BABYLON.Vector3(R3.x+sideLen,R3.y,0),
+        new BABYLON.Vector3(R2.x+sideLen,R2.y,0),
+        mats[4],root
+      );
+
+      root.rotation.x = 0;
+    }
+  },
+
+  quadPrism: {
+    name: "四角柱",
+    state: {
+      isNet:false,
+      dims:{ width:2, depth:2, height:2 },
+      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc","#cccccc"] // 前,右,左,上,下,後
+    },
+    uiDims: [
+      { label:"横幅", key:"width",  min:0.5, max:10, step:0.1 },
+      { label:"奥行", key:"depth",  min:0.5, max:10, step:0.1 },
+      { label:"高さ", key:"height", min:0.5, max:10, step:0.1 },
+    ],
+    colorNames:["前","右","左","上","下","後"],
+
+    buildSolid(root,dims,m){
+      const w=dims.width, d=dims.depth, h=dims.height;
+      const hw=w/2, hd=d/2, hh=h/2;
+
+      const faces = [
+        [ 0,  0,  hd, 0,        0,         0, w, h, m[0]], // 前
+        [ 0,  0, -hd, 0,  Math.PI,         0, w, h, m[5]], // 後
+        [ hw, 0,   0, 0,  Math.PI/2,       0, d, h, m[1]], // 右
+        [-hw, 0,   0, 0, -Math.PI/2,       0, d, h, m[2]], // 左
+        [ 0, hh,  0, Math.PI/2, 0,         0, w, d, m[3]], // 上
+        [ 0,-hh,  0,-Math.PI/2, 0,         0, w, d, m[4]]  // 下
+      ];
+      for(const [x,y,z,rx,ry,rz,W,H,mat] of faces){
+        const f = plane(W,H,mat,root);
+        f.position.set(x,y,z);
+        f.rotation.set(rx,ry,rz);
+      }
+    },
+
+    buildNet(root,dims,m){
+      const w=dims.width, d=dims.depth, h=dims.height;
+      const eps = 0.02;
+      const z   = 0;
+
+      const left   = plane(d,h,m[2],root); left.position.set(-(d/2+w/2+eps), 0, z);
+      const front  = plane(w,h,m[0],root); front.position.set(0,             0, z);
+      const right  = plane(d,h,m[1],root); right.position.set(w/2+d/2+eps,   0, z);
+      const back   = plane(w,h,m[5],root); back.position.set(w/2+d+w/2+2*eps,0, z);
+
+      const top    = plane(w,d,m[3],root); top.position.set(front.position.x,  h/2 + d/2 + eps, 0);
+      const bottom = plane(w,d,m[4],root); bottom.position.set(front.position.x,-(h/2 + d/2 + eps),0);
+    }
+  },
+
+  triPyramid: {
+    name:"三角錐",
+    state:{
+      isNet:false,
+      dims:{ base:2, height:2 },
+      colors:["#ff6b6b","#6bb6ff","#fff266","#ff99cc"] // 底,側1,側2,側3
+    },
+    uiDims:[
+      { label:"底辺", key:"base", min:1, max:10, step:0.1 },
+      { label:"高さ", key:"height", min:0.5, max:10, step:0.1 },
+    ],
+    colorNames:["底面","側面1","側面2","側面3"],
+
+    // 内部ロジックはここに閉じる（統合安全）
+    computePyramid(base, height){
+      const h2 = Math.sqrt(3)/2 * base;
+      const A = new BABYLON.Vector3(-base/2, 0, 0);
+      const B = new BABYLON.Vector3( base/2, 0, 0);
+      const C = new BABYLON.Vector3(0, 0, h2);
+      const G = A.add(B).add(C).scale(1/3);
+      const D = new BABYLON.Vector3(G.x, height, G.z);
+      return {A,B,C,D,h2};
+    },
+
+    attachTriangle2D(p1,p2,insidePoint,lenP,lenQ){
+      const L = BABYLON.Vector2.Distance(p1,p2);
+      if(L < 1e-9) return null;
+
+      const x = (L*L - lenQ*lenQ + lenP*lenP) / (2*L);
+      let y2 = lenP*lenP - x*x;
+      if(y2 < 0) y2 = 0;
+      let y = Math.sqrt(y2);
+
+      const v = p2.subtract(p1);
+      const w = insidePoint.subtract(p1);
+      const cross = v.x*w.y - v.y*w.x;
+      const sign = (cross >= 0) ? 1 : -1;
+      y *= -sign;
+
+      const dir = v.scale(1/L);
+      const n = new BABYLON.Vector2(-dir.y, dir.x);
+      return p1.add(dir.scale(x)).add(n.scale(y));
+    },
+
+    buildSolid(root,dims,mats){
+      const {A,B,C,D} = this.computePyramid(dims.base, dims.height);
+      triFace(A,B,C,mats[0],root);
+      triFace(A,B,D,mats[1],root);
+      triFace(B,C,D,mats[2],root);
+      triFace(C,A,D,mats[3],root);
+    },
+
+    buildNet(root,dims,mats){
+      const {A,B,C,D,h2} = this.computePyramid(dims.base, dims.height);
+
+      const A2 = new BABYLON.Vector2(-dims.base/2, 0);
+      const B2 = new BABYLON.Vector2( dims.base/2, 0);
+      const C2 = new BABYLON.Vector2(0, h2);
+
+      const AD = BABYLON.Vector3.Distance(A,D);
+      const BD = BABYLON.Vector3.Distance(B,D);
+      const CD = BABYLON.Vector3.Distance(C,D);
+
+      triFace(
+        new BABYLON.Vector3(A2.x,A2.y,0),
+        new BABYLON.Vector3(B2.x,B2.y,0),
+        new BABYLON.Vector3(C2.x,C2.y,0),
+        mats[0], root
+      );
+
+      const Pab = this.attachTriangle2D(A2,B2,C2,AD,BD);
+      if(Pab){
+        triFace(
+          new BABYLON.Vector3(A2.x,A2.y,0),
+          new BABYLON.Vector3(B2.x,B2.y,0),
+          new BABYLON.Vector3(Pab.x,Pab.y,0),
+          mats[1], root
+        );
+      }
+
+      const Pbc = this.attachTriangle2D(B2,C2,A2,BD,CD);
+      if(Pbc){
+        triFace(
+          new BABYLON.Vector3(B2.x,B2.y,0),
+          new BABYLON.Vector3(C2.x,C2.y,0),
+          new BABYLON.Vector3(Pbc.x,Pbc.y,0),
+          mats[2], root
+        );
+      }
+
+      const Pca = this.attachTriangle2D(C2,A2,B2,CD,AD);
+      if(Pca){
+        triFace(
+          new BABYLON.Vector3(C2.x,C2.y,0),
+          new BABYLON.Vector3(A2.x,A2.y,0),
+          new BABYLON.Vector3(Pca.x,Pca.y,0),
+          mats[3], root
+        );
+      }
+    }
+  },
+
+  quadPyramid: {
+    name:"四角錐",
+    state:{
+      isNet:false,
+      dims:{ width:2, depth:2, height:2 },
+      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc"] // 底,前,右,後,左
+    },
+    uiDims:[
+      { label:"横幅", key:"width", min:0.5, max:10, step:0.1 },
+      { label:"奥行", key:"depth", min:0.5, max:10, step:0.1 },
+      { label:"高さ", key:"height",min:0.5, max:10, step:0.1 },
+    ],
+    colorNames:["底","前","右","後","左"],
+
+    buildSolid(root,dims,m){
+      const w=dims.width, d=dims.depth, h=dims.height;
+      const hw=w/2, hd=d/2;
+      const y0 = -h/2;
+      const apex = new BABYLON.Vector3(0, h/2, 0);
+
+      const A = new BABYLON.Vector3(-hw, y0, -hd);
+      const B = new BABYLON.Vector3( hw, y0, -hd);
+      const C = new BABYLON.Vector3( hw, y0,  hd);
+      const D = new BABYLON.Vector3(-hw, y0,  hd);
+
+      quadFace(A,B,C,D,m[0],root);
+      triFace(A,B,apex,m[1],root);
+      triFace(B,C,apex,m[2],root);
+      triFace(C,D,apex,m[3],root);
+      triFace(D,A,apex,m[4],root);
+    },
+
+    buildNet(root,dims,m){
+      const w=dims.width, d=dims.depth, h=dims.height;
+      const hw=w/2;
+
+      const A = new BABYLON.Vector3(-hw,0,   0);
+      const B = new BABYLON.Vector3( hw,0,   0);
+      const D = new BABYLON.Vector3(-hw,0,   d);
+      const C = new BABYLON.Vector3( hw,0,   d);
+
+      quadFace(A,B,C,D,m[0],root);
+
+      const L = Math.sqrt((w/2)*(w/2) + (d/2)*(d/2) + h*h);
+      const hFrontBack = Math.sqrt(L*L - (w/2)*(w/2));
+      const hLeftRight = Math.sqrt(L*L - (d/2)*(d/2));
+
+      const frontTip = new BABYLON.Vector3(0, 0, -hFrontBack);
+      triFace(A,B,frontTip,m[1],root);
+
+      const backTip  = new BABYLON.Vector3(0, 0, d + hFrontBack);
+      triFace(D,C,backTip,m[3],root);
+
+      const rightTip = new BABYLON.Vector3(hw + hLeftRight, 0, d/2);
+      triFace(B,C,rightTip,m[2],root);
+
+      const leftTip  = new BABYLON.Vector3(-hw - hLeftRight, 0, d/2);
+      triFace(D,A,leftTip,m[4],root);
+    }
+  },
+
+  cylinder: {
+    name:"円柱（高さのみ）",
+    state:{
+      isNet:false,
+      dims:{ height:4 },
+      colors:["#6bb6ff","#fff266","#ff6b6b"] // 側面,上面,底面
+    },
+    uiDims:[
+      { label:"高さ", key:"height", min:1, max:10, step:0.1 },
+    ],
+    colorNames:["側面","上面","底面"],
+    radiusFixed: 2,
+
+    buildSolid(root,dims,m){
+      const r = this.radiusFixed;
+      const h = dims.height;
+      const tess = 48;
+
+      const side = BABYLON.MeshBuilder.CreateCylinder("side",{
+        height:h, diameter:2*r, tessellation:tess, cap:BABYLON.Mesh.NO_CAP
+      },scene);
+      side.material = m[0];
+      side.parent = root;
+
+      const top = BABYLON.MeshBuilder.CreateDisc("top",{
+        radius:r, tessellation:tess
+      },scene);
+      top.material = m[1];
+      top.rotation.x = -Math.PI/2;
+      top.position.y = h/2;
+      top.parent = root;
+
+      const bottom = BABYLON.MeshBuilder.CreateDisc("bottom",{
+        radius:r, tessellation:tess
+      },scene);
+      bottom.material = m[2];
+      bottom.rotation.x = Math.PI/2;
+      bottom.position.y = -h/2;
+      bottom.parent = root;
+    },
+
+ buildNet(root,dims,m){
+  const r = this.radiusFixed;
+  const h = dims.height;
+ const circum = 2 * Math.PI * r;
+
+  // 側面（青）
+  const rect = plane(circum, h, m[0], root);
+  rect.position.set(0, 0, 0);
+  rect.rotation.set(0, 0, 0);
+
+  // 上面（黄色）― 上辺にぴったり接する
+  const top = BABYLON.MeshBuilder.CreateDisc(
+    "topNet",
+    { radius:r, tessellation:48 },
+    scene
+  );
+  top.material = m[1];
+  top.position.set(0, h/2 + r, 0);
+  top.parent = root;
+
+  // 底面（赤）― 下辺にぴったり接する
+  const bottom = BABYLON.MeshBuilder.CreateDisc(
+    "botNet",
+    { radius:r, tessellation:48 },
+    scene
+  );
+  bottom.material = m[2];
+  bottom.position.set(0, -(h/2 + r), 0);
+  bottom.parent = root;
+},
+
+
+  onAfterBuild(isNet){
+   if(isNet){
+     // ★ 展開図は「真正面・真上」から見る
+     camera.alpha = 0;              // 正面
+     camera.beta  = Math.PI / 2;    // 真上から少し傾けた正面
+     camera.radius *= 1.1;          // 少し引く（重なり防止）
+   }else{
+     // 立体表示時は通常角度
+     camera.alpha = Math.PI * 0.30;
+     camera.beta  = Math.PI * 0.30;
+   }
+}
+
+    
+  },
+
+  cone: {
+    name:"円錐（高さのみ）",
+    state:{
+      isNet:false,
+      dims:{ height:4 },
+      colors:["#6bb6ff","#ffee66"] // 側面,底面
+    },
+    uiDims:[
+      { label:"高さ", key:"height", min:1, max:10, step:0.1 },
+    ],
+    colorNames:["側面","底面"],
+    radiusFixed: 1.5,
+
+    buildSolid(root,dims,m){
+      const R = this.radiusFixed;
+      const H = dims.height;
+
+      const cone = BABYLON.MeshBuilder.CreateCylinder("cone",{
+        height:H, diameterTop:0, diameterBottom:2*R, tessellation:120
+      },scene);
+      cone.material = m[0];
+      cone.parent = root;
+
+      const bottom = BABYLON.MeshBuilder.CreateDisc("bottom",{ radius:R, tessellation:120 },scene);
+      bottom.material = m[1];
+      bottom.rotation.x = Math.PI/2;
+      bottom.position.y = -H/2;
+      bottom.parent = root;
+    },
+
+    buildNet(root,dims,m){
+      const R = this.radiusFixed;
+      const H = dims.height;
+
+      const s = Math.sqrt(R*R + H*H);            // 斜辺
+      const theta = 2*Math.PI * (R / s);         // 扇形角
+      const sector = BABYLON.MeshBuilder.CreateDisc("sector",{
+        radius:s, tessellation:160, arc: theta / (2*Math.PI)
+      },scene);
+      sector.material = m[0];
+      sector.rotation.x = -Math.PI/2;
+      sector.rotation.y = -Math.PI/2;
+      sector.parent = root;
+
+      const angle = theta/2;
+      const dist = s + R; // “接する”位置（あなたの元コード踏襲）
+      const bottom = BABYLON.MeshBuilder.CreateDisc("bottomNet",{ radius:R, tessellation:120 },scene);
+      bottom.material = m[1];
+      bottom.rotation.x = -Math.PI/2;
+      bottom.position.x = dist * Math.sin(angle);
+      bottom.position.z = dist * Math.cos(angle);
+      bottom.parent = root;
+    }
+  }
+};
+
+/* =========================================================
+   表示管理（rootは1つ・切替で中身を作り直す）
+   ========================================================= */
+const root = new BABYLON.TransformNode("appRoot", scene);
+
+let currentKey = "triPrism";
+
+function getShape(){ return SHAPES[currentKey]; }
+
+function rebuild(){
+  const shape = getShape();
+  const { isNet, dims, colors } = shape.state;
+
+  clearNode(root);
+  root.rotation.set(0,0,0);
+
+  const mats = colors.map(makeMat);
+
+  if(isNet) shape.buildNet(root, dims, mats);
+  else      shape.buildSolid(root, dims, mats);
+
+// カメラ補正（円柱の展開図では使わない）
+if(!(currentKey === "cylinder" && shape.state.isNet)){
+  frame(root);
+}
+// ★ 円柱の展開図はカメラを完全固定
+if(currentKey === "cylinder" && shape.state.isNet){
+
+  camera.setTarget(BABYLON.Vector3.Zero());
+
+  // ★ 位置を直接指定（これが決定打）
+  camera.setPosition(new BABYLON.Vector3(0, 0, 18));
+
+}
+
+
+  // 図形固有のカメラ処理があれば適用（円柱など）
+  if(typeof shape.onAfterBuild === "function"){
+    shape.onAfterBuild(isNet);
+  }
+
+  // タイトル・ボタン文言
+  document.getElementById("shapeTitle").innerText = shape.name;
+  document.getElementById("toggleBtn").innerText = isNet ? "立体に戻す" : "展開図に切替";
+}
+
+/* =========================================================
+   UI：プルダウン＋寸法＋色（切替時に再生成）
+   ========================================================= */
+const shapeSelect = document.getElementById("shapeSelect");
+const labelsEl   = document.getElementById("labels");
+const colorSetEl = document.getElementById("colorSet");
+
+function buildShapeSelect(){
+  shapeSelect.innerHTML = "";
+  for(const key of Object.keys(SHAPES)){
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = SHAPES[key].name;
+    shapeSelect.appendChild(opt);
+  }
+  shapeSelect.value = currentKey;
+
+  shapeSelect.onchange = () => {
+    currentKey = shapeSelect.value;
+    buildUI();
+    rebuild();
+  };
+}
+
+function buildUI(){
+  const shape = getShape();
+  const { dims, colors } = shape.state;
+
+  // 寸法UI
+  labelsEl.innerHTML = "";
+  for(const d of shape.uiDims){
+    const line = document.createElement("div");
+    line.className = "dimLine";
+    line.innerHTML = `
+      <label>${d.label}</label>
+      <div class="ctrl">
+        <input type="number" id="dim_${d.key}" step="${d.step}" value="${dims[d.key]}">
+        <input type="range"  id="rng_${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${dims[d.key]}">
+      </div>
+    `;
+    labelsEl.appendChild(line);
+  }
+
+  // 同期（number <-> range）
+  for(const d of shape.uiDims){
+    const num = document.getElementById(`dim_${d.key}`);
+    const rng = document.getElementById(`rng_${d.key}`);
+
+    num.oninput = () => {
+      let v = parseFloat(num.value);
+      if(!isFinite(v) || v <= 0) v = Math.max(d.min, d.step);
+      v = Math.min(d.max, Math.max(d.min, v));
+      dims[d.key] = v;
+      rng.value = String(v);
+      rebuild();
+    };
+    rng.oninput = () => {
+      let v = parseFloat(rng.value);
+      if(!isFinite(v) || v <= 0) v = Math.max(d.min, d.step);
+      dims[d.key] = v;
+      num.value = String(v);
+      rebuild();
+    };
+  }
+
+  // 色UI
+  colorSetEl.innerHTML = "";
+  const names = shape.colorNames || colors.map((_,i)=>`面${i+1}`);
+  for(let i=0;i<colors.length;i++){
+    const row = document.createElement("div");
+    row.className = "colorLine";
+    const inp = document.createElement("input");
+    inp.type = "color";
+    inp.value = colors[i];
+    inp.oninput = (e) => {
+      shape.state.colors[i] = e.target.value;
+      rebuild();
+    };
+    const label = document.createElement("div");
+    label.textContent = names[i] ?? `面${i+1}`;
+    row.appendChild(inp);
+    row.appendChild(label);
+    colorSetEl.appendChild(row);
+  }
+
+  // タイトル
+  document.getElementById("shapeTitle").innerText = shape.name;
+}
+
+/* =========================================================
+   ボタン：展開図切替 / リセット
+   ========================================================= */
+document.getElementById("toggleBtn").onclick = () => {
+  const shape = getShape();
+  shape.state.isNet = !shape.state.isNet;
+  rebuild();
+};
+
+document.getElementById("resetBtn").onclick = () => {
+  // 各図形の「初期値」に戻す（破損防止のため固定値を再代入）
+  const shape = getShape();   // 今表示している図形だけ取得
+
+  if(currentKey === "triPrism"){
+    shape.state.dims   = { base:2, height:2, triH:2 };
+    shape.state.colors = ["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc"];
+  }
+  else if(currentKey === "quadPrism"){
+    shape.state.dims   = { width:2, depth:2, height:2 };
+    shape.state.colors = ["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc","#cccccc"];
+  }
+  else if(currentKey === "triPyramid"){
+    shape.state.dims   = { base:2, height:2 };
+    shape.state.colors = ["#ff6b6b","#6bb6ff","#fff266","#ff99cc"];
+  }
+  else if(currentKey === "quadPyramid"){
+    shape.state.dims   = { width:2, depth:2, height:2 };
+    shape.state.colors = ["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc"];
+  }
+  else if(currentKey === "cylinder"){
+    shape.state.dims   = { height:4 };
+    shape.state.colors = ["#6bb6ff","#fff266","#ff6b6b"];
+  }
+  else if(currentKey === "cone"){
+    shape.state.dims   = { height:4 };
+    shape.state.colors = ["#6bb6ff","#ffee66"];
+  }
+
+  // 表示モード（isNet）は一切変更しない
+  buildUI();
+  rebuild();
+
+
+  // 今表示中の図形のUIも作り直す
+  buildUI();
+  rebuild();
+};
+
+/* =========================================================
+   初期化
+   ========================================================= */
+buildShapeSelect();
+buildUI();
+rebuild();
+
+engine.runRenderLoop(() => scene.render());
+window.addEventListener("resize", () => engine.resize());
+</script>
+</body>
+</html>
