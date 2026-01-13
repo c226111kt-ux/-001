@@ -294,14 +294,14 @@ const SHAPES = {
     state: {
       isNet:false,
       dims:{ width:2, depth:2, height:2 },
-      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc","#cccccc"] // 前,右,左,上,下,後
+      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc","#cccccc"] // 前面,右面,左面,上面,下面,後面
     },
     uiDims: [
       { label:"横幅", key:"width",  min:0.5, max:10, step:0.1 },
       { label:"奥行", key:"depth",  min:0.5, max:10, step:0.1 },
       { label:"高さ", key:"height", min:0.5, max:10, step:0.1 },
     ],
-    colorNames:["前","右","左","上","下","後"],
+    colorNames:["前面","右面","左面","上面","下面","後面"],
 
     buildSolid(root,dims,m){
       const w=dims.width, d=dims.depth, h=dims.height;
@@ -444,14 +444,14 @@ const SHAPES = {
     state:{
       isNet:false,
       dims:{ width:2, depth:2, height:2 },
-      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc"] // 底,前,右,後,左
+      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc"] // 底面,前面,右面,後面,左面
     },
     uiDims:[
       { label:"横幅", key:"width", min:0.5, max:10, step:0.1 },
       { label:"奥行", key:"depth", min:0.5, max:10, step:0.1 },
       { label:"高さ", key:"height",min:0.5, max:10, step:0.1 },
     ],
-    colorNames:["底","前","右","後","左"],
+    colorNames:["底面","前面","右面","後面","左面"],
 
     buildSolid(root,dims,m){
       const w=dims.width, d=dims.depth, h=dims.height;
@@ -688,7 +688,7 @@ if(currentKey === "cylinder" && shape.state.isNet){
 
   // タイトル・ボタン文言
   document.getElementById("shapeTitle").innerText = shape.name;
-  document.getElementById("toggleBtn").innerText = isNet ? "立体図に戻す" : "展開図に切替";
+  document.getElementById("toggleBtn").innerText = isNet ? "立体図に切替" : "展開図に切替";
 }
 
 /* =========================================================
