@@ -231,7 +231,7 @@ const SHAPES = {
       { label:"高さ", key:"height",min:1, max:10, step:0.1 },
       { label:"奥行", key:"triH",  min:1, max:10, step:0.1 },
     ],
-    colorNames: ["前面","後面","底面","左側面","右側面"],
+    colorNames: ["上面","底面","側面１","側面２","側面３"],
 
     buildSolid(root, dims, mats){
       const hb = dims.base / 2;
@@ -294,14 +294,14 @@ const SHAPES = {
     state: {
       isNet:false,
       dims:{ width:2, depth:2, height:2 },
-      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc","#cccccc"] // 前面,右面,左面,上面,下面,後面
+      colors:["#ff6b6b","#6bb6ff","#fff266","#66ffa0","#ff99cc","#cccccc"] 
     },
     uiDims: [
       { label:"横幅", key:"width",  min:0.5, max:10, step:0.1 },
       { label:"奥行", key:"depth",  min:0.5, max:10, step:0.1 },
       { label:"高さ", key:"height", min:0.5, max:10, step:0.1 },
     ],
-    colorNames:["前面","右面","左面","上面","下面","後面"],
+    colorNames:["面１","面２","面３","面４","面５","面６"],
 
     buildSolid(root,dims,m){
       const w=dims.width, d=dims.depth, h=dims.height;
@@ -451,7 +451,7 @@ const SHAPES = {
       { label:"奥行", key:"depth", min:0.5, max:10, step:0.1 },
       { label:"高さ", key:"height",min:0.5, max:10, step:0.1 },
     ],
-    colorNames:["底面","前面","右面","後面","左面"],
+    colorNames:["底面","面１","面２","面３","面４"],
 
     buildSolid(root,dims,m){
       const w=dims.width, d=dims.depth, h=dims.height;
