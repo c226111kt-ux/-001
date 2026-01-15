@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -324,7 +325,7 @@ const SHAPES = {
 
     buildNet(root,dims,m){
       const w=dims.width, d=dims.depth, h=dims.height;
-      const eps = 0.02;
+      const eps = 0.001; 
       const z   = 0;
 
       const left   = plane(d,h,m[2],root); left.position.set(-(d/2+w/2+eps), 0, z);
